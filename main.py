@@ -144,11 +144,6 @@ def whatsapp():
 
     state = user_states[sender]
 
-    # Escalation shortcut
-    if "talk to human" in msg or "agent" in msg:
-        reply.body("Sure! Email us at contact@bytecodetechnologies.in or schedule a call 👉 https://bytecodetechnologies.in/book-demo")
-        return str(resp)
-
     # Step 0: Menu
     if state["step"] == 0:
         if msg in ["1", "services"]:
@@ -163,29 +158,10 @@ def whatsapp():
             reply.body("Sure! Please describe your issue and we’ll connect you with a tech specialist.")
         else:
             answer = find_best_faq_answer(msg)
-            reply.body(answer + "\n\nWas this helpful? (yes/no)")
-            state["step"] = "feedback"
-        return str(resp)
-
-    # Step: Feedback
-    if state["step"] == "feedback":
-        if msg in ["yes", "y"]:
-            reply.body("Glad to help! Type 'menu' to see more options.")
-        elif msg in ["no", "n"]:
-            reply.body("Sorry about that 😔. Would you like to talk to a human expert? (yes/no)")
-            state["step"] = "escalate"
-        else:
-            reply.body("Please respond with 'yes' or 'no'.")
-        return str(resp)
-
-    # Step: Escalation
-    if state["step"] == "escalate":
-        if "yes" in msg:
-            reply.body("Great! Book a call 👉 https://bytecodetechnologies.in/book-demo or email us at contact@bytecodetechnologies.in")
-        else:
-            reply.body("Alright! Let me know how else I can help. Type 'menu' to see more.")
-        state["step"] = 0
-        return str(resp)
+            if not answer or answer.strip() == "":
+                answer = get_gpt_response(msg)
+            reply.body(answer)
+            state["step"] = "0"
 
     # Quote Flow
     if state["step"] == 1:
