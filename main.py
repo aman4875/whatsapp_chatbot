@@ -3,8 +3,11 @@ from twilio.twiml.messaging_response import MessagingResponse
 from sentence_transformers import SentenceTransformer, util
 import openai
 import os
+from dotenv import load_dotenv
 
-openai.api_key = "Secreat-API-Key"  # Replace with your OpenAI API key
+load_dotenv()
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 user_states = {}
@@ -103,14 +106,27 @@ def get_gpt_response(user_input):
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant representing Bytecode Technologies. Be polite, concise, and helpful."},
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an assistant for Bytecode Technologies.\n\n"
+                        "Only answer questions related to:\n"
+                        "- Bytecode Technologies (services, pricing, hiring, support)\n"
+                        "- Our technologies, tools, frameworks, infrastructure\n"
+                        "- Our projects, work process, clients, payment systems, deployment, timelines, etc.\n\n"
+                        "If the user asks something unrelated to our company (e.g. 'What is gravity?', 'Who is the PM?', or jokes), reply with:\n"
+                        "\"I'm here to help with Bytecode Technologies-related queries 😊.\"\n\n"
+                        "Be flexible and smart: if a user asks follow-up questions about something we've already discussed (e.g. tech stack or pricing), you can respond naturally."
+                    )
+                },
                 {"role": "user", "content": user_input}
             ],
-            temperature=0.7
+            temperature=0.5
         )
         return response['choices'][0]['message']['content']
     except Exception as e:
-        return "Sorry, I'm having trouble understanding that. Please try again later."
+        print("GPT error:", str(e))  # Add this
+        return "Sorry, I'm having trouble answering right now."
 
 # --- Fuzzy match with fallback ---
 def find_best_faq_answer(user_input, threshold=0.65):
@@ -147,21 +163,38 @@ def whatsapp():
     # Step 0: Menu
     if state["step"] == 0:
         if msg in ["1", "services"]:
-            reply.body(faq_answers[0] + "\n\nWas this helpful? (yes/no)")
-            state["step"] = "feedback"
+            reply.body(faq_answers[0])
+            state["last_topic"] = "services"
+            return str(resp)
         elif msg in ["2", "quote"]:
             state["step"] = 1
             reply.body("Great! What's your name?")
+            return str(resp)
         elif msg in ["3", "meeting"]:
             reply.body("You can book a call 👉 https://bytecodetechnologies.in/book-demo")
+            return str(resp)
         elif msg in ["5", "support"]:
             reply.body("Sure! Please describe your issue and we’ll connect you with a tech specialist.")
+            return str(resp)
         else:
+            # 👇 Check for follow-up after "services"
+            if state.get("last_topic") == "services":
+                service_faqs = FAQ_LIST[0:6]  # First 6 are about services
+                questions = [q for q, _ in service_faqs]
+                answers = [a for _, a in service_faqs]
+                embeddings = model.encode(questions)
+                query_embedding = model.encode(msg)
+                scores = util.cos_sim(query_embedding, embeddings)[0]
+                best_idx = scores.argmax().item()
+
+                if scores[best_idx] >= 0.6:
+                    reply.body(answers[best_idx])
+                    return str(resp)
+
             answer = find_best_faq_answer(msg)
-            if not answer or answer.strip() == "":
-                answer = get_gpt_response(msg)
             reply.body(answer)
-            state["step"] = "0"
+            state["step"] = 0
+            return str(resp)
 
     # Quote Flow
     if state["step"] == 1:
