@@ -4,6 +4,7 @@ from sentence_transformers import SentenceTransformer, util
 import openai
 import os
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
@@ -84,7 +85,7 @@ FAQ_LIST = [
 model = SentenceTransformer('all-MiniLM-L6-v2')
 faq_questions = [q for q, _ in FAQ_LIST]
 faq_answers = [a for _, a in FAQ_LIST]
-faq_embeddings = model.encode(faq_questions)
+faq_embeddings = model.encode(faq_questions, normalize_embeddings=True)
 
 # Main menu
 MAIN_MENU = """👋 Hello! Welcome to *Bytecode Technologies* — Your Digital Partner.
@@ -99,6 +100,11 @@ How can we help you code your next success?
 
 Type a number or just ask your question!
 """
+
+def normalize_text(text):
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', '', text)  # Remove punctuation
+    return text.strip()
 
 # --- GPT fallback ---
 def get_gpt_response(user_input):
@@ -125,15 +131,17 @@ def get_gpt_response(user_input):
         )
         return response['choices'][0]['message']['content']
     except Exception as e:
-        print("GPT error:", str(e))  # Add this
+        print("GPT error:", str(e))
         return "Sorry, I'm having trouble answering right now."
 
 # --- Fuzzy match with fallback ---
-def find_best_faq_answer(user_input, threshold=0.65):
-    query_embedding = model.encode(user_input)
+def find_best_faq_answer(user_input, threshold=0.7):
+    query_embedding = model.encode(normalize_text(user_input), normalize_embeddings=True)
     scores = util.cos_sim(query_embedding, faq_embeddings)[0]
     best_idx = scores.argmax().item()
-    if scores[best_idx] >= threshold:
+    best_score = scores[best_idx].item()
+
+    if best_score >= threshold:
         return faq_answers[best_idx]
     else:
         with open("unanswered_questions.txt", "a") as f:
@@ -179,7 +187,7 @@ def whatsapp():
         else:
             # 👇 Check for follow-up after "services"
             if state.get("last_topic") == "services":
-                service_faqs = FAQ_LIST[0:6]  # First 6 are about services
+                service_faqs = FAQ_LIST[0:6]
                 questions = [q for q, _ in service_faqs]
                 answers = [a for _, a in service_faqs]
                 embeddings = model.encode(questions)
